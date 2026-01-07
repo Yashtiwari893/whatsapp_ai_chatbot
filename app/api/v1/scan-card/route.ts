@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,9 +9,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const openai = new OpenAI({ 
-  apiKey: process.env.OPENAI_API_KEY 
-});
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
 export async function POST(req: Request) {
   try {
@@ -26,34 +24,67 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
-    // 2. OpenAI Vision Processing
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o", // or "gpt-4-turbo" or "gpt-4o-mini" (cheaper)
-      messages: [
-        {
-          role: "user",
-          content: [
-            { 
-              type: "text", 
-              text: "Extract Name, Email, Phone, and Company from this business card image. Return ONLY a valid JSON object with keys: name, email, phone, company" 
-            },
-            { 
-              type: "image_url", 
-              image_url: { url: image_url } 
-            }
-          ]
-        }
-      ],
-      response_format: { type: "json_object" },
-      max_tokens: 500
+    // 2. Fetch image and convert to base64
+    const imageResponse = await fetch(image_url);
+    if (!imageResponse.ok) {
+      throw new Error('Failed to fetch image');
+    }
+    
+    const buffer = await imageResponse.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString('base64');
+    
+    // Detect mime type from URL or default to jpeg
+    const mimeType = image_url.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+
+    // 3. Gemini Vision Processing
+    const model = genAI.getGenerativeModel({ 
+      model: "gemini-1.5-flash",
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 500,
+      }
     });
 
-    const content = response.choices[0].message.content;
-    if (!content) throw new Error("AI returned empty content");
-    
-    const cardData = JSON.parse(content);
+    const result = await model.generateContent([
+      {
+        text: `Extract the following information from this business card image and return ONLY a valid JSON object with these exact keys:
+{
+  "name": "full name of person",
+  "email": "email address",
+  "phone": "phone number",
+  "company": "company name"
+}
+If any field is not found, use null as value. Do not include any other text or explanation.`
+      },
+      {
+        inlineData: {
+          data: base64,
+          mimeType: mimeType
+        }
+      }
+    ]);
 
-    // 3. Save to Supabase
+    const text = result.response.text();
+    console.log("Gemini Raw Response:", text);
+
+    // Parse JSON from response
+    let cardData;
+    try {
+      // Remove markdown code blocks if present
+      const jsonMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/) || 
+                       text.match(/(\{[\s\S]*\})/);
+      const jsonString = jsonMatch ? jsonMatch[1] : text;
+      cardData = JSON.parse(jsonString);
+    } catch (parseError) {
+      console.error("JSON Parse Error:", parseError);
+      return NextResponse.json({ 
+        status: 'error', 
+        message: 'Failed to parse AI response',
+        raw_response: text 
+      }, { status: 500 });
+    }
+
+    // 4. Save to Supabase
     const { error: dbError } = await supabase.from('contacts').insert([
       { 
         sender_phone: phone, 
@@ -64,7 +95,10 @@ export async function POST(req: Request) {
       }
     ]);
 
-    if (dbError) console.error("Database Error:", dbError);
+    if (dbError) {
+      console.error("Database Error:", dbError);
+      // Don't fail the request if DB insert fails
+    }
 
     return NextResponse.json({ status: 'success', data: cardData });
 
