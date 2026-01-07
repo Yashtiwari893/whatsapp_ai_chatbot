@@ -2,10 +2,9 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
-import Tesseract from 'tesseract.js';
 import { supabase } from '@/lib/supabaseClient';
 
-// Groq client (OpenAI-compatible)
+// Groq client
 const openai = new OpenAI({
   apiKey: process.env.GROQ_API_KEY,
   baseURL: 'https://api.groq.com/openai/v1',
@@ -22,16 +21,23 @@ export async function POST(req: Request) {
       );
     }
 
-    // 1️⃣ OCR (FREE)
-    const ocrResult = await Tesseract.recognize(
-      image_url,
-      'eng',
-      {
-        logger: () => {} // silent
-      }
-    );
+    // 1️⃣ OCR via OCR.space (Serverless safe)
+    const ocrRes = await fetch('https://api.ocr.space/parse/imageurl', {
+      method: 'POST',
+      headers: {
+        apikey: process.env.OCR_SPACE_API_KEY || 'helloworld',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        url: image_url,
+        language: 'eng',
+        isOverlayRequired: 'false',
+      }),
+    });
 
-    const ocrText = ocrResult.data.text?.trim();
+    const ocrData = await ocrRes.json();
+    const ocrText =
+      ocrData?.ParsedResults?.[0]?.ParsedText?.trim();
 
     if (!ocrText) {
       return NextResponse.json(
@@ -40,7 +46,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2️⃣ LLM Processing (Groq)
+    // 2️⃣ Groq LLM
     const response = await openai.chat.completions.create({
       model: 'llama3-8b-8192',
       messages: [
@@ -49,9 +55,9 @@ export async function POST(req: Request) {
           content: `
 Extract contact information from the following business card text.
 
-Return ONLY valid JSON with these keys:
+Return ONLY valid JSON with keys:
 full_name, email, phone, designation, company_name, website.
-If any field is missing, use null.
+Use null if missing.
 
 TEXT:
 ${ocrText}
@@ -65,7 +71,7 @@ ${ocrText}
       response.choices[0].message.content || '{}'
     );
 
-    // 3️⃣ Save to Supabase (UNCHANGED)
+    // 3️⃣ Supabase (unchanged)
     const { data, error } = await supabase
       .from('business_cards')
       .insert([
@@ -80,7 +86,6 @@ ${ocrText}
 
     if (error) throw error;
 
-    // 4️⃣ Response
     return NextResponse.json(
       { success: true, data },
       { status: 200 }
