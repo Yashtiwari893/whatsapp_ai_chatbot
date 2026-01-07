@@ -16,7 +16,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { image_url, phone } = body;
 
-    // 1. Validation: Agar placeholder hai toh error return karo
+    // 1. Validation
     if (!image_url || image_url.includes('{{')) {
       return NextResponse.json({ 
         status: 'error', 
@@ -24,24 +24,22 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
-    // 2. Groq AI Processing
-// Model name ko environment variable se uthayein, ya default stable model rakhein
-const MODEL_NAME = process.env.GROQ_MODEL_NAME || "llama-3.2-90b-vision-preview";
-
-const chatCompletion = await groq.chat.completions.create({
-  messages: [
-    {
-      role: "user",
-      content: [
-        { type: "text", text: "Extract Name, Email, Phone, and Company from this card. Return ONLY a valid JSON object." },
-        { type: "image_url", image_url: { url: image_url } }
-      ]
-    }
-  ],
-  model: MODEL_NAME, 
-  temperature: 0.1,
-  response_format: { type: "json_object" }
-});
+    // 2. Groq AI Processing - UPDATED MODEL
+    const chatCompletion = await groq.chat.completions.create({
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Extract Name, Email, Phone, and Company from this card image. Return ONLY a valid JSON object." },
+            { type: "image_url", image_url: { url: image_url } }
+          ]
+        }
+      ],
+      // ✅ FIXED: Active model (Jan 2026)
+      model: "llama-3.2-11b-vision-preview",
+      temperature: 0.1,
+      response_format: { type: "json_object" }
+    });
 
     const content = chatCompletion.choices[0].message.content;
     if (!content) throw new Error("AI returned empty content");
@@ -64,7 +62,6 @@ const chatCompletion = await groq.chat.completions.create({
 
   } catch (error: any) {
     console.error("Critical Error:", error);
-    // Exact error message return karo debugging ke liye
     return NextResponse.json({ 
       status: 'error', 
       message: error.message || "Something went wrong" 
