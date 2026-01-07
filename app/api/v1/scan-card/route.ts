@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { Groq } from 'groq-sdk';
+import OpenAI from 'openai';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,7 +9,9 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const openai = new OpenAI({ 
+  apiKey: process.env.OPENAI_API_KEY 
+});
 
 export async function POST(req: Request) {
   try {
@@ -24,51 +26,41 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
-    // 2. Groq AI Processing - ACTIVE MODEL (Jan 2026)
-    const chatCompletion = await groq.chat.completions.create({
+    // 2. OpenAI Vision Processing
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o", // or "gpt-4-turbo" or "gpt-4o-mini" (cheaper)
       messages: [
         {
           role: "user",
           content: [
-            { type: "text", text: "Extract Name, Email, Phone, and Company from this business card image. Return ONLY a valid JSON object with these exact keys: name, email, phone, company" },
-            { type: "image_url", image_url: { url: image_url } }
+            { 
+              type: "text", 
+              text: "Extract Name, Email, Phone, and Company from this business card image. Return ONLY a valid JSON object with keys: name, email, phone, company" 
+            },
+            { 
+              type: "image_url", 
+              image_url: { url: image_url } 
+            }
           ]
         }
       ],
-      // ✅ CURRENTLY ACTIVE VISION MODEL
-      model: "llava-v1.5-7b-4096-preview",
-      temperature: 0.1,
-      max_tokens: 1024
-      // Note: LLaVA doesn't support response_format json_object, so we'll parse manually
+      response_format: { type: "json_object" },
+      max_tokens: 500
     });
 
-    const content = chatCompletion.choices[0].message.content;
+    const content = response.choices[0].message.content;
     if (!content) throw new Error("AI returned empty content");
     
-    // Try to parse JSON from response (LLaVA might return text with JSON)
-    let cardData;
-    try {
-      // If wrapped in markdown code blocks, extract JSON
-      const jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/) || 
-                       content.match(/(\{[\s\S]*\})/);
-      cardData = JSON.parse(jsonMatch ? jsonMatch[1] : content);
-    } catch (parseError) {
-      console.error("JSON Parse Error:", parseError);
-      return NextResponse.json({ 
-        status: 'error', 
-        message: 'Failed to parse AI response',
-        raw_response: content 
-      }, { status: 500 });
-    }
+    const cardData = JSON.parse(content);
 
     // 3. Save to Supabase
     const { error: dbError } = await supabase.from('contacts').insert([
       { 
         sender_phone: phone, 
-        full_name: cardData.name || cardData.Name || null, 
-        email: cardData.email || cardData.Email || null, 
-        company_name: cardData.company || cardData.Company || null,
-        phone_number: cardData.phone || cardData.Phone || null
+        full_name: cardData.name || null, 
+        email: cardData.email || null, 
+        company_name: cardData.company || null,
+        phone_number: cardData.phone || null
       }
     ]);
 
