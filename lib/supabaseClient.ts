@@ -1,6 +1,16 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Build time crash se bachne ke liye check karein
+if (!supabaseUrl || !supabaseKey) {
+  if (process.env.NODE_ENV === 'production') {
+    console.warn("Supabase environment variables are missing!");
+  }
+}
+
+export const supabase = createClient(
+  supabaseUrl || 'https://placeholder-url.supabase.co', // Dummy URL for build phase
+  supabaseKey || 'placeholder-key'
+);
