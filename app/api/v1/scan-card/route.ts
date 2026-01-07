@@ -35,7 +35,7 @@ export async function POST(req: Request) {
           ]
         }
       ],
-      model: "llama-3.2-90b-vision-preview",
+      "model": "openai/gpt-oss-120b",
       temperature: 0.1, // Kam temperature for high accuracy
       response_format: { type: "json_object" }
     });
