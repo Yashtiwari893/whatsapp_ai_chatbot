@@ -35,7 +35,7 @@ export async function POST(req: Request) {
           ]
         }
       ],
-      model: "llama-3.2-11b-vision-preview",
+      model: "llama-3.2-90b-vision-preview",
       temperature: 0.1, // Kam temperature for high accuracy
       response_format: { type: "json_object" }
     });
