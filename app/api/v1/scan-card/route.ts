@@ -35,7 +35,8 @@ const chatCompletion = await groq.chat.completions.create({
       ]
     }
   ],
-  model: "llama-3.2-11b-vision-preview", // Is model par switch karein
+  // Current Active Model as per Groq Console (January 2026 update)
+  model: "llama-3.2-11b-vision-preview", // Note: Agar ye firse fail ho, toh groq dashboard check karein
   temperature: 0.1,
   response_format: { type: "json_object" }
 });
