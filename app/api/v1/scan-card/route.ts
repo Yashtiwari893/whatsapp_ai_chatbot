@@ -33,28 +33,25 @@ export async function POST(req: Request) {
     const buffer = await imageResponse.arrayBuffer();
     const base64 = Buffer.from(buffer).toString('base64');
     
-    // Detect mime type from URL or default to jpeg
+    // Detect mime type
     const mimeType = image_url.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
 
     // 3. Gemini Vision Processing
+    // ✅ FIXED: Use correct model name
     const model = genAI.getGenerativeModel({ 
-      model: "gemini-1.5-flash",
-      generationConfig: {
-        temperature: 0.1,
-        maxOutputTokens: 500,
-      }
+      model: "gemini-1.5-flash-latest" // Changed from "gemini-1.5-flash"
     });
 
     const result = await model.generateContent([
       {
-        text: `Extract the following information from this business card image and return ONLY a valid JSON object with these exact keys:
+        text: `Extract the following information from this business card image and return ONLY a valid JSON object:
 {
-  "name": "full name of person",
+  "name": "full name",
   "email": "email address",
   "phone": "phone number",
   "company": "company name"
 }
-If any field is not found, use null as value. Do not include any other text or explanation.`
+If any field is not found, use null. Return ONLY the JSON, no other text.`
       },
       {
         inlineData: {
@@ -67,10 +64,9 @@ If any field is not found, use null as value. Do not include any other text or e
     const text = result.response.text();
     console.log("Gemini Raw Response:", text);
 
-    // Parse JSON from response
+    // Parse JSON
     let cardData;
     try {
-      // Remove markdown code blocks if present
       const jsonMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/) || 
                        text.match(/(\{[\s\S]*\})/);
       const jsonString = jsonMatch ? jsonMatch[1] : text;
@@ -97,7 +93,6 @@ If any field is not found, use null as value. Do not include any other text or e
 
     if (dbError) {
       console.error("Database Error:", dbError);
-      // Don't fail the request if DB insert fails
     }
 
     return NextResponse.json({ status: 'success', data: cardData });
