@@ -1,10 +1,14 @@
 export const dynamic = 'force-dynamic';
+
 import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import Tesseract from 'tesseract.js';
 import { supabase } from '@/lib/supabaseClient';
 
+// Groq client (OpenAI-compatible)
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.GROQ_API_KEY,
+  baseURL: 'https://api.groq.com/openai/v1',
 });
 
 export async function POST(req: Request) {
@@ -12,58 +16,84 @@ export async function POST(req: Request) {
     const { image_url } = await req.json();
 
     if (!image_url) {
-      return NextResponse.json({ error: "Image URL is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Image URL is required' },
+        { status: 400 }
+      );
     }
 
-    // 1. AI Vision Processing
+    // 1️⃣ OCR (FREE)
+    const ocrResult = await Tesseract.recognize(
+      image_url,
+      'eng',
+      {
+        logger: () => {} // silent
+      }
+    );
+
+    const ocrText = ocrResult.data.text?.trim();
+
+    if (!ocrText) {
+      return NextResponse.json(
+        { error: 'No text detected from image' },
+        { status: 400 }
+      );
+    }
+
+    // 2️⃣ LLM Processing (Groq)
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: 'llama3-8b-8192',
       messages: [
         {
-          role: "user",
-          content: [
-            { 
-              type: "text", 
-              text: "Extract contact information from this business card. Return ONLY a JSON object with these keys: full_name, email, phone, designation, company_name, website. If any field is missing, use null." 
-            },
-            {
-              type: "image_url",
-              image_url: { url: image_url },
-            },
-          ],
+          role: 'user',
+          content: `
+Extract contact information from the following business card text.
+
+Return ONLY valid JSON with these keys:
+full_name, email, phone, designation, company_name, website.
+If any field is missing, use null.
+
+TEXT:
+${ocrText}
+          `,
         },
       ],
-      response_format: { type: "json_object" },
+      response_format: { type: 'json_object' },
     });
 
-    const extractedData = JSON.parse(response.choices[0].message.content || "{}");
+    const extractedData = JSON.parse(
+      response.choices[0].message.content || '{}'
+    );
 
-    // 2. Save to Supabase
+    // 3️⃣ Save to Supabase (UNCHANGED)
     const { data, error } = await supabase
       .from('business_cards')
       .insert([
-        { 
-          ...extractedData, 
-          image_url, 
-          raw_ai_output: extractedData 
-        }
+        {
+          ...extractedData,
+          image_url,
+          raw_ai_output: extractedData,
+        },
       ])
       .select()
       .single();
 
     if (error) throw error;
 
-    // 3. Return Structured Response
-    return NextResponse.json({
-      success: true,
-      data: data
-    }, { status: 200 });
+    // 4️⃣ Response
+    return NextResponse.json(
+      { success: true, data },
+      { status: 200 }
+    );
 
   } catch (error: any) {
-    console.error("Extraction Error:", error);
-    return NextResponse.json({ 
-      success: false, 
-      error: error.message || "Internal Server Error" 
-    }, { status: 500 });
+    console.error('Extraction Error:', error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: error.message || 'Internal Server Error',
+      },
+      { status: 500 }
+    );
   }
 }
