@@ -25,20 +25,20 @@ export async function POST(req: Request) {
     }
 
     // 2. Groq AI Processing
-    const chatCompletion = await groq.chat.completions.create({
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: "Act as an OCR. Extract Name, Email, Phone, and Company from this card. Return ONLY a valid JSON object." },
-            { type: "image_url", image_url: { url: image_url } }
-          ]
-        }
-      ],
-      "model": "openai/gpt-oss-120b",
-      temperature: 0.1, // Kam temperature for high accuracy
-      response_format: { type: "json_object" }
-    });
+const chatCompletion = await groq.chat.completions.create({
+  messages: [
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "Extract Name, Email, Phone, and Company from this card image. Return ONLY a valid JSON object." },
+        { type: "image_url", image_url: { url: image_url } }
+      ]
+    }
+  ],
+  model: "llama-3.2-11b-vision-preview", // Is model par switch karein
+  temperature: 0.1,
+  response_format: { type: "json_object" }
+});
 
     const content = chatCompletion.choices[0].message.content;
     if (!content) throw new Error("AI returned empty content");
