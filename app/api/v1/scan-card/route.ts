@@ -25,18 +25,20 @@ export async function POST(req: Request) {
     }
 
     // 2. Groq AI Processing
+// Model name ko environment variable se uthayein, ya default stable model rakhein
+const MODEL_NAME = process.env.GROQ_MODEL_NAME || "llama-3.2-90b-vision-preview";
+
 const chatCompletion = await groq.chat.completions.create({
   messages: [
     {
       role: "user",
       content: [
-        { type: "text", text: "Extract Name, Email, Phone, and Company from this card image. Return ONLY a valid JSON object." },
+        { type: "text", text: "Extract Name, Email, Phone, and Company from this card. Return ONLY a valid JSON object." },
         { type: "image_url", image_url: { url: image_url } }
       ]
     }
   ],
-  // Current Active Model as per Groq Console (January 2026 update)
-  model: "llama-3.2-11b-vision-preview", // Note: Agar ye firse fail ho, toh groq dashboard check karein
+  model: MODEL_NAME, 
   temperature: 0.1,
   response_format: { type: "json_object" }
 });
