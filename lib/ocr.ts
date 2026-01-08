@@ -1,17 +1,33 @@
 export async function extractTextFromImage(imageUrl: string) {
-  const res = await fetch('https://api.ocr.space/parse/imageurl', {
+  // 1️⃣ Download image
+  const imageRes = await fetch(imageUrl);
+
+  if (!imageRes.ok) {
+    throw new Error('Image download failed');
+  }
+
+  const buffer = await imageRes.arrayBuffer();
+  const base64Image = Buffer.from(buffer).toString('base64');
+
+  // 2️⃣ Send base64 to OCR.space
+  const ocrRes = await fetch('https://api.ocr.space/parse/image', {
     method: 'POST',
     headers: {
       apikey: process.env.OCR_SPACE_API_KEY!,
       'Content-Type': 'application/x-www-form-urlencoded',
     },
     body: new URLSearchParams({
-      url: imageUrl,
+      base64Image: `data:image/jpeg;base64,${base64Image}`,
       language: 'eng',
       OCREngine: '2',
+      scale: 'true',
+      detectOrientation: 'true',
     }),
   });
 
-  const data = await res.json();
-  return data?.ParsedResults?.[0]?.ParsedText || null;
+  const data = await ocrRes.json();
+
+  const text = data?.ParsedResults?.[0]?.ParsedText?.trim();
+
+  return text || null;
 }
