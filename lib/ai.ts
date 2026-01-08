@@ -5,77 +5,98 @@ const client = new OpenAI({
   baseURL: 'https://api.groq.com/openai/v1',
 });
 
-// 🔒 JSON cleaner (IMPORTANT)
+/* ---------- HARDENED JSON PARSER ---------- */
 function safeJsonParse(raw: string) {
   try {
     const cleaned = raw
       .replace(/```json/gi, '')
       .replace(/```/g, '')
+      .replace(/[\u0000-\u001F]+/g, '') // remove hidden control chars
       .trim();
 
     return JSON.parse(cleaned);
   } catch (err) {
-    console.error('❌ JSON parse failed:', raw);
-    return {};
+    console.error('❌ JSON parse failed. Raw:', raw);
+    return null;
   }
 }
 
+/* ---------- FINAL STRONG VERSION ---------- */
 export async function structureText(text: string) {
   try {
-    // 🛑 ENV CHECK (Vercel 500 ka main reason)
     if (!process.env.GROQ_API_KEY) {
-      console.error('❌ GROQ_API_KEY is missing');
+      console.error('❌ GROQ_API_KEY missing');
       return {};
     }
 
-    if (!text || text.trim().length === 0) {
-      console.error('❌ Empty OCR text received');
+    if (!text || text.trim().length < 15) {
+      console.error('❌ OCR text too short or empty');
       return {};
     }
+
+    // ✂️ Token safety (Groq limit guard)
+    const SAFE_TEXT = text.substring(0, 4000);
 
     const res = await client.chat.completions.create({
-      model: 'llama-3.1-8b-instant', // ✅ Free tier friendly
+      model: 'llama-3.1-8b-instant',
       temperature: 0,
-      max_tokens: 300,
+      max_tokens: 350,
       messages: [
         {
           role: 'system',
           content:
-            'You extract structured data from OCR text and return valid JSON only. No markdown. No explanation.',
+            'You are a data extraction engine. Return clean JSON only. No markdown. No explanation.',
         },
         {
           role: 'user',
           content: `
 Extract business card data.
+
 Return ONLY valid JSON.
 No markdown. No explanation.
 
-Fields:
+Required keys:
 full_name,
 email,
 phone,
 designation,
 company_name,
-website
+website,
+address,
+category,
+linkedin
 
 Text:
-${text}
+${SAFE_TEXT}
 `,
         },
       ],
     });
 
-    const content = res.choices?.[0]?.message?.content;
+    const raw = res.choices?.[0]?.message?.content;
 
-    if (!content) {
-      console.error('❌ Empty response from Groq LLM');
+    if (!raw) {
+      console.error('❌ Empty LLM output');
       return {};
     }
 
-    // ✅ SAFE JSON PARSE
-    return safeJsonParse(content);
+    const parsed = safeJsonParse(raw);
+    if (!parsed) return {};
+
+    // 🧹 Clean & normalize
+    return {
+      full_name: parsed.full_name || null,
+      email: parsed.email || null,
+      phone: parsed.phone || null,
+      designation: parsed.designation || null,
+      company_name: parsed.company_name || null,
+      website: parsed.website || null,
+      address: parsed.address || null,
+      category: parsed.category || null,
+      linkedin: parsed.linkedin || null,
+    };
   } catch (err: any) {
-    console.error('🔥 Groq LLM Error:', err?.message || err);
+    console.error('🔥 Groq fatal error:', err?.message || err);
     return {};
   }
 }
