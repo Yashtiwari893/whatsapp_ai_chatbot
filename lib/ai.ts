@@ -7,10 +7,14 @@ const client = new OpenAI({
 
 export async function structureText(text: string) {
   const res = await client.chat.completions.create({
-    model: 'llama3-8b-8192',
+    model: 'llama-3.1-8b-instant', // ✅ UPDATED MODEL
     temperature: 0,
     max_tokens: 300,
     messages: [
+      {
+        role: 'system',
+        content: 'You extract structured data from OCR text and return valid JSON only.',
+      },
       {
         role: 'user',
         content: `
@@ -18,7 +22,12 @@ Extract business card data.
 Return ONLY valid JSON.
 
 Fields:
-full_name, email, phone, designation, company_name, website.
+full_name,
+email,
+phone,
+designation,
+company_name,
+website
 
 Text:
 ${text}
@@ -27,5 +36,12 @@ ${text}
     ],
   });
 
-  return JSON.parse(res.choices[0].message.content || '{}');
+  const content = res.choices[0].message.content || '{}';
+
+  try {
+    return JSON.parse(content);
+  } catch (err) {
+    console.error('JSON parse failed:', content);
+    return {};
+  }
 }

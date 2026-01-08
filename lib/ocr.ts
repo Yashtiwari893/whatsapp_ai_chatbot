@@ -1,28 +1,32 @@
 export async function extractTextFromImage(imageUrl: string) {
-  // 1️⃣ Download image
+  // 1️⃣ Download image on YOUR server
   const imageRes = await fetch(imageUrl);
 
   if (!imageRes.ok) {
-    throw new Error('Image download failed');
+    throw new Error('Failed to download image');
   }
 
-  const buffer = await imageRes.arrayBuffer();
-  const base64Image = Buffer.from(buffer).toString('base64');
+  const imageBuffer = Buffer.from(await imageRes.arrayBuffer());
 
-  // 2️⃣ Send base64 to OCR.space
+  // 2️⃣ Prepare multipart form-data
+  const formData = new FormData();
+  formData.append(
+    'file',
+    new Blob([imageBuffer]),
+    'card.jpg'
+  );
+  formData.append('language', 'eng');
+  formData.append('detectOrientation', 'true');
+  formData.append('scale', 'true');
+  formData.append('OCREngine', '2');
+
+  // 3️⃣ Send file to OCR.space
   const ocrRes = await fetch('https://api.ocr.space/parse/image', {
     method: 'POST',
     headers: {
-      apikey: process.env.OCR_SPACE_API_KEY!,
-      'Content-Type': 'application/x-www-form-urlencoded',
+      apikey: process.env.OCR_SPACE_API_KEY || 'helloworld',
     },
-    body: new URLSearchParams({
-      base64Image: `data:image/jpeg;base64,${base64Image}`,
-      language: 'eng',
-      OCREngine: '2',
-      scale: 'true',
-      detectOrientation: 'true',
-    }),
+    body: formData,
   });
 
   if (!ocrRes.ok) {
@@ -30,10 +34,17 @@ export async function extractTextFromImage(imageUrl: string) {
   }
 
   const data = await ocrRes.json();
-
   console.log('OCR RAW RESPONSE:', JSON.stringify(data, null, 2));
+
+  if (data.IsErroredOnProcessing) {
+    throw new Error(data.ErrorMessage?.[0] || 'OCR failed');
+  }
 
   const text = data?.ParsedResults?.[0]?.ParsedText?.trim();
 
-  return text || null;
+  if (!text) {
+    throw new Error('No text detected');
+  }
+
+  return text;
 }
