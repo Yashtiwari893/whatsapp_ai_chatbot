@@ -25,7 +25,13 @@ export async function extractTextFromImage(imageUrl: string) {
     }),
   });
 
+  if (!ocrRes.ok) {
+    throw new Error('OCR request failed');
+  }
+
   const data = await ocrRes.json();
+
+  console.log('OCR RAW RESPONSE:', JSON.stringify(data, null, 2));
 
   const text = data?.ParsedResults?.[0]?.ParsedText?.trim();
 
